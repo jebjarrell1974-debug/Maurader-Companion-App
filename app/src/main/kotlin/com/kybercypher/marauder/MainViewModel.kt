@@ -51,9 +51,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStream(enabled: Boolean) { _streamEnabled.value = enabled }
 
-    fun run(cmd: MarauderCommand) {
+    fun run(cmd: MarauderCommand, values: Map<String, String> = emptyMap()) {
         viewModelScope.launch {
-            val stream = _streamEnabled.value
+            // -serial only means anything on a command that opens a capture.
+            val stream = _streamEnabled.value && cmd.startsScan
             val assembler = if (stream) {
                 closeWriter()
                 CaptureWriter(getApplication(), cmd.id).also {
@@ -61,7 +62,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }.let { PcapAssembler(it.stream()) }
             } else null
 
-            session.startScan(cmd, stream, assembler)
+            session.startScan(cmd, values, stream, assembler)
             if (stream && session.settings.value["SavePCAP"]?.asBool != true) {
                 // Buffer.cpp returns early when SavePCAP is false, which makes
                 // -serial a silent no-op. Never let that fail quietly.

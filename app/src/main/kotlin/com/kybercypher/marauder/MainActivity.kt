@@ -87,6 +87,7 @@ private fun AppRoot(vm: MainViewModel) {
     val info by vm.session.info.collectAsStateWithLifecycle()
     val stream by vm.streamEnabled.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
+    val busy by vm.session.busy.collectAsStateWithLifecycle()
     val lines = vm.session.console.value
 
     var tab by remember { mutableStateOf(Tab.SCAN) }
@@ -153,6 +154,7 @@ private fun AppRoot(vm: MainViewModel) {
             } else when (tab) {
                 Tab.SCAN -> MenuScreen(
                     scan = scan,
+                    busy = busy,
                     streamEnabled = stream,
                     onToggleStream = vm::setStream,
                     onRun = vm::run,

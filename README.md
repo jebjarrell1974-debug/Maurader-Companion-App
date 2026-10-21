@@ -129,10 +129,25 @@ The status strip mirrors the device's own, same fields in the same order.
 The Marauder skull is not reproduced; it is Koko's mark. The firmware is credited
 with a link.
 
-## Scope
+## Coverage
 
-Transmit-class commands (deauth, badmsg, sleep, auth) have no buttons in this
-build. They are reachable from the raw console for anyone who means it. Use this
-only on networks you own or are authorised to test.
+All 61 firmware commands and all 10 `attack -t` subtypes are in the menu,
+organised the way the device organises them: wifi scanners / sniffers / attacks
+/ general, bluetooth, bluetooth attacks, gps, lists and selection, device.
+Commands that take arguments open a form that shows the exact line it will send
+before you send it.
+
+## Transmit guards
+
+Anything that emits is gated three ways:
+
+- an explicit confirmation naming the legal consequence
+- red chrome and a live TX countdown for as long as the radio is on
+- a hard **60-second auto-stop**, extendable with +60s
+
+The auto-stop is the one that matters. The firmware runs until `stopscan`, so
+without it a forgotten tab keeps transmitting from a pocket indefinitely.
+
+Use this only on networks you own or are authorised to test.
 
 Firmware: https://github.com/justcallmekoko/ESP32Marauder by justcallmekoko

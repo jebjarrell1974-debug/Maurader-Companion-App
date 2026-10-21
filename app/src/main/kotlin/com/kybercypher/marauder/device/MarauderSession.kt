@@ -131,6 +131,15 @@ class MarauderSession(
     private val _capture = MutableStateFlow(CaptureStats())
     val capture = _capture.asStateFlow()
 
+    /**
+     * What the session is doing right now, as a short human-readable step, or
+     * null when idle. Starting a scan is several serial round trips; naming the
+     * step is more useful than a bare spinner because it tells you WHICH part
+     * is slow when something stalls.
+     */
+    private val _busy = MutableStateFlow<String?>(null)
+    val busy = _busy.asStateFlow()
+
     /** Emitted when a frame fails validation, so anomalies surface instead of hiding. */
     private val _anomalies = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val anomalies = _anomalies.asSharedFlow()
@@ -261,20 +270,32 @@ class MarauderSession(
      */
     private suspend fun runCollecting(tag: String, command: String) {
         collecting = tag
-        sendAwaitingEcho(command)
-        sendAwaitingEcho(Commands.SENTINEL)
-        collecting = null
+        val prior = _busy.value
+        _busy.value = command
+        try {
+            sendAwaitingEcho(command)
+            // The sentinel's echo bounds a response the firmware never
+            // terminates. Only list -a/-s/-c print a trailing count.
+            sendAwaitingEcho(Commands.SENTINEL)
+        } finally {
+            collecting = null
+            _busy.value = prior
+        }
     }
 
     suspend fun handshake(): ProtocolInfo? {
+        _busy.value = "handshake"
         val tx = MachineProto.newTransactionId()
         sendAwaitingEcho(MachineProto.handshakeCommand(tx))
+        _busy.value = null
         return _info.value
     }
 
+    private var settingsLoaded = false
+
     suspend fun refreshSettings() {
         settingAccum.clear()
-        runCollecting("settings", Commands.SETTINGS.command)
+        runCollecting("settings", Commands.SETTINGS.render())
         // Fields arrive as Name/Type/Value triples in order.
         val out = linkedMapOf<String, SettingEntry>()
         var name: String? = null; var type: String? = null
@@ -287,33 +308,36 @@ class MarauderSession(
             }
         }
         _settings.value = out
+        settingsLoaded = true
     }
 
     suspend fun refreshAccessPoints() {
-        apAccum.clear(); runCollecting("list_a", Commands.LIST_AP.command)
+        apAccum.clear(); runCollecting("list_a", Commands.LIST_AP.render())
         _accessPoints.value = apAccum.toList()
     }
 
     suspend fun refreshSsids() {
-        ssidAccum.clear(); runCollecting("list_s", Commands.LIST_SSIDS.command)
+        ssidAccum.clear(); runCollecting("list_s", Commands.LIST_SSIDS.render())
         _ssids.value = ssidAccum.toList()
     }
 
     suspend fun refreshBle() {
-        bleAccum.clear(); runCollecting("list_b", Commands.LIST_BLE.command)
+        bleAccum.clear(); runCollecting("list_b", Commands.LIST_BLE.render())
         _ble.value = bleAccum.toList()
     }
 
     suspend fun refreshStations() {
-        stationAccum.clear(); runCollecting("list_c", Commands.LIST_STATIONS.command)
+        stationAccum.clear(); runCollecting("list_c", Commands.LIST_STATIONS.render())
         _stations.value = stationAccum.toList()
     }
 
     suspend fun stopScan() {
+        _busy.value = "stopscan"
         autoStopJob?.cancel()
         autoStopJob = null
-        sendAwaitingEcho(Commands.STOPSCAN.command)
+        sendAwaitingEcho(Commands.STOPSCAN.render())
         _scan.value = ScanState()
+        _busy.value = null
     }
 
     /**
@@ -322,9 +346,16 @@ class MarauderSession(
      * capture simply never arrives. Verify and enable before any streaming run.
      */
     suspend fun ensureSavePcapEnabled(): Boolean {
-        refreshSettings()
-        val current = _settings.value["SavePCAP"]?.asBool
-        if (current == true) return true
+        // Settings are dumped once at connect and cached. Re-dumping on every
+        // capture start cost two extra round trips for a value that only this
+        // app changes. `settings` is also the single most expensive command on
+        // the board (621 B plus an NVS read), so it is worth not repeating.
+        if (!settingsLoaded) {
+            _busy.value = "reading settings"
+            refreshSettings()
+        }
+        if (_settings.value["SavePCAP"]?.asBool == true) return true
+        _busy.value = "enabling SavePCAP"
         sendAwaitingEcho("settings -s SavePCAP enable")
         refreshSettings()
         return _settings.value["SavePCAP"]?.asBool == true
@@ -335,25 +366,40 @@ class MarauderSession(
      * [stream] appends -serial; the default is OFF, which keeps the SD capture
      * complete and still delivers live telemetry.
      */
-    suspend fun startScan(cmd: MarauderCommand, stream: Boolean = false, sink: PcapAssembler? = null) {
-        if (_scan.value.running && cmd.gating == Gating.REQUIRES_IDLE) stopScan()
-        if (stream) {
-            assembler = sink
-            _capture.value = CaptureStats(startedAtMs = System.currentTimeMillis())
-            ensureSavePcapEnabled()
-        } else {
-            assembler = null
+    suspend fun startScan(
+        cmd: MarauderCommand,
+        values: Map<String, String> = emptyMap(),
+        stream: Boolean = false,
+        sink: PcapAssembler? = null,
+    ) {
+        try {
+            if (_scan.value.running && cmd.gating == Gating.REQUIRES_IDLE) {
+                _busy.value = "stopping current scan"
+                stopScan()
+            }
+            if (stream) {
+                assembler = sink
+                _capture.value = CaptureStats(startedAtMs = System.currentTimeMillis())
+                ensureSavePcapEnabled()
+            } else {
+                assembler = null
+            }
+            val rendered = cmd.render(values)
+            _busy.value = rendered
+            // -serial only means anything on a command that opens a capture.
+            sendAwaitingEcho(if (cmd.startsScan) Commands.withSerial(rendered, stream) else rendered)
+            _scan.value = ScanState(
+                running = cmd.startsScan,
+                label = cmd.label,
+                scanClass = cmd.scanClass,
+                streaming = stream,
+                transmitting = cmd.transmits,
+                secondsRemaining = if (cmd.transmits) TRANSMIT_AUTO_STOP_SECONDS else null,
+            )
+            if (cmd.transmits) armAutoStop()
+        } finally {
+            _busy.value = null
         }
-        sendAwaitingEcho(Commands.withSerial(cmd, stream))
-        _scan.value = ScanState(
-            running = cmd.startsScan,
-            label = cmd.label,
-            scanClass = cmd.scanClass,
-            streaming = stream,
-            transmitting = cmd.transmits,
-            secondsRemaining = if (cmd.transmits) TRANSMIT_AUTO_STOP_SECONDS else null,
-        )
-        if (cmd.transmits) armAutoStop()
     }
 
     /**
@@ -386,7 +432,10 @@ class MarauderSession(
         armAutoStop()
     }
 
-    suspend fun raw(command: String) { sendAwaitingEcho(command) }
+    suspend fun raw(command: String) {
+        _busy.value = command
+        try { sendAwaitingEcho(command) } finally { _busy.value = null }
+    }
 
     fun onDisconnected() {
         autoStopJob?.cancel()
