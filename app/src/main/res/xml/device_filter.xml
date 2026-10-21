@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Decimal, not hex. The Marauder v8's own bridge is first; the others let the
+  same app drive other Marauder hardware without a rebuild.
+-->
+<resources>
+    <!-- 0x10C4:0xEA60  CP210x / CP2102N  <- Marauder v8 -->
+    <usb-device vendor-id="4292" product-id="60000" />
+    <!-- 0x303A:0x1001  Espressif native USB-Serial-JTAG (S3/C3/C5/C6 all share this) -->
+    <usb-device vendor-id="12346" product-id="4097" />
+    <!-- 0x1A86:0x7523  CH340 -->
+    <usb-device vendor-id="6790" product-id="29987" />
+    <!-- 0x1A86:0x55D4  CH9102 / CH343 -->
+    <usb-device vendor-id="6790" product-id="21972" />
+    <!-- 0x0403:0x6001  FTDI FT232 -->
+    <usb-device vendor-id="1027" product-id="24577" />
+</resources>
