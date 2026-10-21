@@ -167,6 +167,28 @@ class FrameDemuxer(
         }
     }
 
+    /**
+     * Emits every complete line that ends before [limit], consumes exactly those
+     * bytes, and returns how many bytes it consumed. Callers holding an index
+     * into the buffer MUST subtract the return value from it — the buffer is
+     * compacted underneath them.
+     */
+    private fun emitLines(limit: Int, out: MutableList<DeviceMessage>): Int {
+        var start = 0
+        var i = 0
+        while (i < limit) {
+            if (buf[i] == '\n'.code.toByte()) {
+                var end = i
+                if (end > start && buf[end - 1] == '\r'.code.toByte()) end--
+                out.add(DeviceMessage.Text(String(buf, start, end - start, Charsets.UTF_8)))
+                start = i + 1
+            }
+            i++
+        }
+        if (start > 0) consume(start)
+        return start
+    }
+
     private fun indexOf(pattern: ByteArray, from: Int): Int {
         val first = pattern[0]
         val last = len - pattern.size
