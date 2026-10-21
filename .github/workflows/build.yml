@@ -21,6 +21,41 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # WHY THIS EXISTS: AGP creates ~/.android/debug.keystore with a RANDOM key
+      # when none is present, and every runner starts clean. That meant every
+      # build was signed by a different key, so Android refused to install one
+      # build over another ("App not installed" / "did not update").
+      #
+      # Preferred: the ANDROID_KEYSTORE_B64 secret, which is permanent.
+      # Fallback: a cached keystore, which is stable until the cache is evicted
+      # (GitHub drops caches unused for 7 days).
+      - name: Restore cached debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
+      - name: Install signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > ~/.android/debug.keystore
+            echo "signing key: from repository secret (permanent)"
+          elif [ -s ~/.android/debug.keystore ]; then
+            echo "signing key: restored from cache (stable until the cache expires)"
+          else
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
+              -storetype PKCS12 -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "signing key: NEWLY GENERATED - you will have to uninstall before installing this build"
+          fi
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android 2>/dev/null \
+            | grep "SHA256:" | head -1
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
