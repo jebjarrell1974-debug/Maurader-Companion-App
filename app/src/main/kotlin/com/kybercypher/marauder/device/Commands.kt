@@ -117,9 +117,6 @@ object Commands {
     val SCANALL = MarauderCommand("scanall", "Scan all", "scanall",
         Category.WIFI_SCAN, Gating.REQUIRES_IDLE, ScanClass.PASSIVE, true,
         description = "Scans for APs and stations.")
-    val SCANSTA = MarauderCommand("scansta", "Scan stations", "scansta",
-        Category.WIFI_SCAN, Gating.REQUIRES_IDLE, ScanClass.PASSIVE, true,
-        description = "Scans for client stations.")
     val PACKET_COUNT = MarauderCommand("packetcount", "Packet rate", "packetcount",
         Category.WIFI_SCAN, Gating.REQUIRES_IDLE, ScanClass.METER, true,
         description = "Counts packets per second.")
@@ -254,8 +251,6 @@ object Commands {
             listOf("airtag", "flipper", "flock", "meta"))))
     val SNIFF_SKIM = MarauderCommand("sniffskim", "Skimmer sniff", "sniffskim",
         Category.BLUETOOTH, Gating.REQUIRES_IDLE, ScanClass.BLE, true)
-    val BT_WARDRIVE = MarauderCommand("btwardrive", "BT wardrive", "btwardrive",
-        Category.BLUETOOTH, Gating.REQUIRES_IDLE, ScanClass.NAVIGATE, true)
     val FIND_MY = MarauderCommand("findmy", "FindMy / AirTag", "findmy -t {idx}",
         Category.BLUETOOTH, Gating.REQUIRES_IDLE, ScanClass.RAW, true,
         params = listOf(Param.Index("idx", "AirTag", ListSource.AIRTAG)))
@@ -265,12 +260,6 @@ object Commands {
         params = listOf(Param.Choice("kind", "Spam type",
             listOf("sourapple", "applejuice", "google", "samsung", "windows", "flipper", "all"))),
         description = "Floods BLE pairing advertisements.")
-    val BLE_SOURAPPLE = MarauderCommand("sourapple", "Sour Apple", "sourapple",
-        Category.BT_ATTACK, Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true)
-    val BLE_SWIFTPAIR = MarauderCommand("swiftpair", "Swift Pair", "swiftpair",
-        Category.BT_ATTACK, Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true)
-    val BLE_SAMSUNG = MarauderCommand("samsungblespam", "Samsung spam", "samsungblespam",
-        Category.BT_ATTACK, Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true)
     val SPOOF_AT = MarauderCommand("spoofat", "Spoof AirTag", "spoofat -t {idx}",
         Category.BT_ATTACK, Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
         params = listOf(Param.Index("idx", "AirTag", ListSource.AIRTAG)))
@@ -289,10 +278,6 @@ object Commands {
         Category.GPS, Gating.ALWAYS,
         params = listOf(Param.Choice("sys", "System",
             listOf("native", "all", "gps", "glonass", "galileo", "navic", "qzss", "beidou"))))
-    val GPS_TRACKER_START = MarauderCommand("gpstracker_on", "GPS tracker: start", "gpstracker -c start",
-        Category.GPS, Gating.ALWAYS, ScanClass.NAVIGATE)
-    val GPS_TRACKER_STOP = MarauderCommand("gpstracker_off", "GPS tracker: stop", "gpstracker -c stop",
-        Category.GPS, Gating.ALWAYS)
     val GPS_POI_SAVE = MarauderCommand("gpspoi_s", "POI: save", "gpspoi -s", Category.GPS, Gating.ALWAYS)
     val GPS_POI_MARK = MarauderCommand("gpspoi_m", "POI: mark", "gpspoi -m", Category.GPS, Gating.ALWAYS)
     val GPS_POI_END = MarauderCommand("gpspoi_e", "POI: end", "gpspoi -e", Category.GPS, Gating.ALWAYS)
@@ -427,9 +412,22 @@ object Commands {
     val REBOOT = MarauderCommand("reboot", "Reboot board", "reboot", Category.DEVICE, Gating.ALWAYS)
     val HELP = MarauderCommand("help", "Help", "help", Category.DEVICE, Gating.ALWAYS)
 
+
+    /**
+     * NOT IMPLEMENTED BY THE FIRMWARE, deliberately absent:
+     *   scansta, btwardrive  - commented out in CommandLine.h; they do not exist
+     *   gpstracker           - declared and shown in `help`, but has no dispatch
+     *                          branch, so it is accepted and silently ignored
+     *   sourapple / swiftpair / samsungblespam / btspamall
+     *                        - help text only; use `blespam -t <type>` instead
+     *
+     * This matters because the firmware echoes '#<line>' for ANY input it
+     * receives, including commands it does not recognise, and then does
+     * nothing. An app that treats the echo as success reports these as working.
+     */
     /** Everything, in menu order. */
     val all: List<MarauderCommand> = listOf(
-        SCANALL, SCANSTA, PACKET_COUNT, WARDRIVE, MAC_TRACK, PING_SCAN, ARP_SCAN, ARP_SCAN_F,
+        SCANALL, PACKET_COUNT, WARDRIVE, MAC_TRACK, PING_SCAN, ARP_SCAN, ARP_SCAN_F,
         PORT_SCAN_SVC, PORT_SCAN_ALL, FOXHUNT_AP, FOXHUNT_STA, FOXHUNT_BLE, FOXHUNT_TAG,
         FOXHUNT_FLIPPER, FOXHUNT_PINE, FOXHUNT_MULTI,
         SNIFF_RAW, SNIFF_BEACON, SNIFF_PROBE, SNIFF_PWN, SNIFF_PINESCAN, SNIFF_MULTISSID,
@@ -438,10 +436,9 @@ object Commands {
         ATK_BEACON_AP, ATK_PROBE, ATK_FUNNY, ATK_RICKROLL, ATK_BADMSG, ATK_BADMSG_C,
         ATK_SLEEP, ATK_SLEEP_C, ATK_SAE, ATK_CSA, ATK_QUIET, KARMA,
         EVIL_PORTAL, EVIL_PORTAL_HTML, EVIL_PORTAL_SETHTML,
-        SNIFF_BT, SNIFF_BT_TYPE, SNIFF_SKIM, BT_WARDRIVE, FIND_MY,
-        BLE_SPAM, BLE_SOURAPPLE, BLE_SWIFTPAIR, BLE_SAMSUNG, SPOOF_AT,
-        GPS_DATA, NMEA, GPS_FIELD, GPS_SYSTEM, GPS_TRACKER_START, GPS_TRACKER_STOP,
-        GPS_POI_SAVE, GPS_POI_MARK, GPS_POI_END, WARDRIVE_POI,
+        SNIFF_BT, SNIFF_BT_TYPE, SNIFF_SKIM, FIND_MY,
+        BLE_SPAM, SPOOF_AT,
+        GPS_DATA, NMEA, GPS_FIELD, GPS_SYSTEM, GPS_POI_SAVE, GPS_POI_MARK, GPS_POI_END, WARDRIVE_POI,
         GEOFENCE_LIST, GEOFENCE_SET, GEOFENCE_CLEAR,
         LIST_AP, LIST_STATIONS, LIST_SSIDS, LIST_PROBES, LIST_BLE, LIST_AIRTAGS, LIST_IPS,
         LIST_FLIPPERS, LIST_PINEAPPLE, LIST_MULTISSID, INFO, INFO_AP,

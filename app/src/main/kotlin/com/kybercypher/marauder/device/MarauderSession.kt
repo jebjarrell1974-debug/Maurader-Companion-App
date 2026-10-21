@@ -78,6 +78,8 @@ class MarauderSession(
         const val CONSOLE_CAPACITY = 2000
         /** 15 Hz. See start(). */
         const val UI_TICK_MS = 66L
+        /** How long to wait for the firmware's "Starting..." announcement. */
+        const val ACK_TIMEOUT_MS = 3500L
         /**
          * Hard ceiling on any transmitting mode. The firmware runs until
          * stopscan, so without this a forgotten tab keeps emitting from a phone
@@ -146,6 +148,20 @@ class MarauderSession(
 
     /** Echoes, used to terminate responses that the firmware does not terminate. */
     private val echoes = Channel<String>(Channel.BUFFERED)
+
+    /**
+     * "Starting<name>. Stop with stopscan" lines.
+     *
+     * THE ECHO IS NOT AN ACKNOWLEDGEMENT. CommandLine.cpp:270 prints '#<line>'
+     * for ANY input the firmware receives, including commands it does not
+     * recognise and commands dropped by the scanning gate — then does nothing.
+     * An app that treats the echo as success reports those as working, which is
+     * exactly how an unsupported command looks like a working one.
+     *
+     * startScanFromCLI always announces itself, so for anything that starts a
+     * scan this line is the real confirmation.
+     */
+    private val scanStarts = Channel<String>(Channel.CONFLATED)
 
     // Accumulators for a list response in flight.
     private val apAccum = mutableListOf<AccessPoint>()
@@ -220,8 +236,10 @@ class MarauderSession(
 
             is ParsedLine.ScanStopped -> _scan.value = ScanState()
 
-            is ParsedLine.ScanStarted ->
+            is ParsedLine.ScanStarted -> {
+                scanStarts.trySend(p.what)
                 _scan.value = _scan.value.copy(running = true, label = p.what)
+            }
 
             is ParsedLine.Ap -> if (collecting == "list_a") apAccum += p.value
             is ParsedLine.Ble -> if (collecting == "list_b") bleAccum += p.value
@@ -386,8 +404,23 @@ class MarauderSession(
             }
             val rendered = cmd.render(values)
             _busy.value = rendered
+            while (scanStarts.tryReceive().isSuccess) { /* drain stale */ }
             // -serial only means anything on a command that opens a capture.
             sendAwaitingEcho(if (cmd.startsScan) Commands.withSerial(rendered, stream) else rendered)
+
+            if (cmd.startsScan) {
+                // Wait for the firmware's own announcement rather than trusting
+                // the echo. No announcement means the command did not take.
+                val ack = withTimeoutOrNull(ACK_TIMEOUT_MS) { scanStarts.receive() }
+                if (ack == null) {
+                    _anomalies.tryEmit(
+                        "\"$rendered\" was not acknowledged by the board. " +
+                        "It may be unsupported on this hardware, or a scan is still running."
+                    )
+                    _scan.value = ScanState()
+                    return
+                }
+            }
             _scan.value = ScanState(
                 running = cmd.startsScan,
                 label = cmd.label,
