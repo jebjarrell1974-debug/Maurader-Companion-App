@@ -83,6 +83,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun extendTransmit() { session.extendTransmitWindow() }
+
     fun refreshAccessPoints() { viewModelScope.launch { session.refreshAccessPoints() } }
 
     fun dismissNotice() { _notice.value = null }

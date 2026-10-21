@@ -157,6 +157,7 @@ private fun AppRoot(vm: MainViewModel) {
                     onToggleStream = vm::setStream,
                     onRun = vm::run,
                     onStop = vm::stop,
+                    onExtend = vm::extendTransmit,
                 )
                 Tab.RESULTS -> ListsScreen(
                     accessPoints = aps,

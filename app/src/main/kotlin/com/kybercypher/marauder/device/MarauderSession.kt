@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.neverEqualPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -21,6 +22,10 @@ data class ScanState(
     val label: String = "",
     val scanClass: ScanClass = ScanClass.NONE,
     val streaming: Boolean = false,
+    /** True while the radio is EMITTING, not merely listening. */
+    val transmitting: Boolean = false,
+    /** Seconds left on the auto-stop, or null when it does not apply. */
+    val secondsRemaining: Int? = null,
 )
 
 data class CaptureStats(
@@ -73,10 +78,18 @@ class MarauderSession(
         const val CONSOLE_CAPACITY = 2000
         /** 15 Hz. See start(). */
         const val UI_TICK_MS = 66L
+        /**
+         * Hard ceiling on any transmitting mode. The firmware runs until
+         * stopscan, so without this a forgotten tab keeps emitting from a phone
+         * in a pocket indefinitely. That is the failure mode worth engineering
+         * against; everything else about these modes is recoverable.
+         */
+        const val TRANSMIT_AUTO_STOP_SECONDS = 60
         private const val RESPONSE_TIMEOUT_MS = 4000L
     }
 
     private val demuxer = FrameDemuxer()
+    private var autoStopJob: Job? = null
     private var assembler: PcapAssembler? = null
 
     val connection: StateFlow<ConnectionState> = transport.state
@@ -297,6 +310,8 @@ class MarauderSession(
     }
 
     suspend fun stopScan() {
+        autoStopJob?.cancel()
+        autoStopJob = null
         sendAwaitingEcho(Commands.STOPSCAN.command)
         _scan.value = ScanState()
     }
@@ -335,12 +350,47 @@ class MarauderSession(
             label = cmd.label,
             scanClass = cmd.scanClass,
             streaming = stream,
+            transmitting = cmd.transmits,
+            secondsRemaining = if (cmd.transmits) TRANSMIT_AUTO_STOP_SECONDS else null,
         )
+        if (cmd.transmits) armAutoStop()
+    }
+
+    /**
+     * Counts the transmit window down and stops the radio when it expires.
+     * Cancelled by any manual stop. Extend() restarts the window rather than
+     * adding to it, so the displayed number is always the real remaining time.
+     */
+    private fun armAutoStop() {
+        autoStopJob?.cancel()
+        autoStopJob = scope.launch {
+            var left = TRANSMIT_AUTO_STOP_SECONDS
+            while (left > 0 && isActive) {
+                delay(1000)
+                left--
+                _scan.value = _scan.value.copy(secondsRemaining = left)
+            }
+            if (isActive) {
+                // Clear the handle FIRST: stopScan() cancels autoStopJob, and
+                // that is the job we are currently running inside.
+                autoStopJob = null
+                stopScan()
+            }
+        }
+    }
+
+    /** Restart the 60s window without dropping the carrier. */
+    fun extendTransmitWindow() {
+        if (!_scan.value.transmitting) return
+        _scan.value = _scan.value.copy(secondsRemaining = TRANSMIT_AUTO_STOP_SECONDS)
+        armAutoStop()
     }
 
     suspend fun raw(command: String) { sendAwaitingEcho(command) }
 
     fun onDisconnected() {
+        autoStopJob?.cancel()
+        autoStopJob = null
         demuxer.flush()
         demuxer.reset()
         _scan.value = ScanState()

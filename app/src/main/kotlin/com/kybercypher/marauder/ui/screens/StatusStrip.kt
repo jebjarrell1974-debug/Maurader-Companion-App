@@ -31,8 +31,15 @@ fun StatusStrip(
     firmware: String?,
     modifier: Modifier = Modifier,
 ) {
-    val accent = if (scan.running) scan.scanClass.color() else Palette.Dim
-    Column(modifier.fillMaxWidth().background(Palette.Chrome.copy(alpha = 0.22f))) {
+    val accent = when {
+        scan.transmitting -> Palette.Red
+        scan.running -> scan.scanClass.color()
+        else -> Palette.Dim
+    }
+    // Red chrome means exactly one thing in this app: the radio is emitting.
+    val fill = if (scan.transmitting) Palette.Red.copy(alpha = 0.18f)
+               else Palette.Chrome.copy(alpha = 0.22f)
+    Column(modifier.fillMaxWidth().background(fill)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -47,8 +54,23 @@ fun StatusStrip(
             Spacer(Modifier.width(12.dp))
             Field("FW", firmware ?: "--")
             Spacer(Modifier.weight(1f))
+            if (scan.transmitting) {
+                scan.secondsRemaining?.let {
+                    Text(
+                        "TX ${it}s",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Palette.Red,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+            }
             Text(
-                if (scan.running) scan.scanClass.label() else if (connected) "IDLE" else "OFFLINE",
+                when {
+                    scan.transmitting -> "TRANSMITTING"
+                    scan.running -> scan.scanClass.label()
+                    connected -> "IDLE"
+                    else -> "OFFLINE"
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = accent,
             )

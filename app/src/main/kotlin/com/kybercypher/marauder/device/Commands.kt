@@ -27,6 +27,12 @@ data class MarauderCommand(
     val scanClass: ScanClass = ScanClass.NONE,
     /** True if this command puts the device into a running scan mode. */
     val startsScan: Boolean = false,
+    /**
+     * True if this mode TRANSMITS. Independent of scanClass — the firmware
+     * colours sae/csa/quiet cyan and rickroll yellow, but all of them emit.
+     * The confirm gate and the auto-stop timer key off this, not off colour.
+     */
+    val transmits: Boolean = false,
     val description: String = "",
 )
 
@@ -74,6 +80,48 @@ object Commands {
     val SNIFF_BT = MarauderCommand("sniffbt", "BLE sniff", "sniffbt", Gating.REQUIRES_IDLE, ScanClass.BLE, true)
     val FIND_MY = MarauderCommand("findmy", "AirTag / FindMy", "findmy", Gating.REQUIRES_IDLE, ScanClass.RAW, true)
     val SNIFF_SKIM = MarauderCommand("sniffskim", "Skimmer sniff", "sniffskim", Gating.REQUIRES_IDLE, ScanClass.BLE, true)
+
+    // ---- transmit modes ----------------------------------------------------
+    // Every one of these emits. They are gated behind an explicit confirmation
+    // and a hard auto-stop; see MarauderSession.startScan.
+    val ATK_DEAUTH = MarauderCommand("atk_deauth", "Deauth", "attack -t deauth",
+        Gating.REQUIRES_IDLE, ScanClass.TRANSMIT, true, transmits = true,
+        description = "Sends deauthentication frames.")
+    val ATK_BEACON_RANDOM = MarauderCommand("atk_beacon_r", "Beacon spam (random)", "attack -t beacon -r",
+        Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
+        description = "Floods randomly-named beacons.")
+    val ATK_BEACON_LIST = MarauderCommand("atk_beacon_l", "Beacon spam (SSID list)", "attack -t beacon -l",
+        Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
+        description = "Beacons every SSID in the loaded list.")
+    val ATK_PROBE = MarauderCommand("atk_probe", "Probe flood", "attack -t probe",
+        Gating.REQUIRES_IDLE, ScanClass.TRANSMIT, true, transmits = true,
+        description = "Floods probe requests.")
+    val ATK_RICKROLL = MarauderCommand("atk_rickroll", "Rickroll beacons", "attack -t rickroll",
+        Gating.REQUIRES_IDLE, ScanClass.TARGETED, true, transmits = true,
+        description = "Beacons lyric SSIDs.")
+    val ATK_BADMSG = MarauderCommand("atk_badmsg", "Bad EAPOL msg", "attack -t badmsg",
+        Gating.REQUIRES_IDLE, ScanClass.TRANSMIT, true, transmits = true,
+        description = "Sends malformed EAPOL message 1.")
+    val ATK_SLEEP = MarauderCommand("atk_sleep", "Sleep frames", "attack -t sleep",
+        Gating.REQUIRES_IDLE, ScanClass.TRANSMIT, true, transmits = true,
+        description = "Sends power-save frames.")
+    val ATK_SAE = MarauderCommand("atk_sae", "SAE commit", "attack -t sae",
+        Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
+        description = "Sends SAE commit frames at WPA3 APs.")
+    val ATK_CSA = MarauderCommand("atk_csa", "Channel switch", "attack -t csa",
+        Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
+        description = "Sends channel-switch announcements.")
+    val ATK_QUIET = MarauderCommand("atk_quiet", "Quiet element", "attack -t quiet",
+        Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
+        description = "Sends quiet-element frames.")
+    val BLE_SPAM = MarauderCommand("blespam", "BLE spam", "blespam",
+        Gating.REQUIRES_IDLE, ScanClass.BLE, true, transmits = true,
+        description = "Floods BLE advertisements.")
+
+    val transmitCatalog: List<MarauderCommand> = listOf(
+        ATK_DEAUTH, ATK_BEACON_RANDOM, ATK_BEACON_LIST, ATK_PROBE, ATK_RICKROLL,
+        ATK_BADMSG, ATK_SLEEP, ATK_SAE, ATK_CSA, ATK_QUIET, BLE_SPAM,
+    )
 
     /** Everything the browsable menu offers, excluding transmit-class modes. */
     val passiveCatalog: List<MarauderCommand> = listOf(
